@@ -12,6 +12,9 @@ var path = require('path')
 var prettysize = require('prettysize')
 var WebTorrent = require('../')
 var xbmc = require('nodebmc')
+var express = require('express');
+var app = express();
+
 
 process.title = 'WebTorrent'
 
@@ -181,10 +184,26 @@ torrent.on('ready', function () {
 
 var filename, swarm, wires
 
+app.get('/', function(req, res){
+  if (!torrent.swarm || !Object.keys(torrent.swarm._peers).length) { res.send('Initializing') }
+  else { 
+    var count = 0
+    for (var addr in torrent.swarm._peers){
+      var peer = torrent.swarm._peers[addr]
+      if (peer.handshaken) count += 1
+      res.write(JSON.stringify(peer.toJSON()))
+    }
+    res.end('Total connected ' + count)
+  }
+});
+
+app.listen(3000);
+
 function onTorrent (torrent) {
   filename = torrent.name
   swarm = torrent.swarm
   wires = torrent.swarm.wires
+  peers = torrent.swarm._peers
 
   if (argv.list) {
     torrent.files.forEach(function (file, i) {
@@ -358,17 +377,21 @@ function onTorrent (torrent) {
     clivas.line('{80:}')
     linesremaining -= 8
 
-    wires.every(function (wire) {
+    for (var addr in peers) {
+      var peer = peers[addr]
       var tags = []
+      var wire = peer.wire
+      if (!peer.wire || !peer.handshaken) continue
       if (wire.peerChoking) tags.push('choked')
       clivas.line(
         '{25+magenta:' + wire.remoteAddress + '} {10:'+bytes(wire.downloaded)+'} ' +
         '{10+cyan:' + bytes(wire.downloadSpeed()) + '/s} ' +
-        '{15+grey:' + tags.join(', ') + '}'
-      )
+        '{25+magenta:' + peer.location + '}' +
+        '{25:' + peer.client + '}' +
+        '{15+grey:' + tags.join(', ') + '}')
       peerslisted++
-      return linesremaining - peerslisted > 4
-    })
+      if ( linesremaining - peerslisted < 4 ) break
+    }
     linesremaining -= peerslisted
 
     if (wires.length > peerslisted) {
